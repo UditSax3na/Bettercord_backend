@@ -17,8 +17,7 @@ CREATE TABLE IF NOT EXISTS chat (
 
 CREATE TABLE IF NOT EXISTS friends(
     userid INT,
-    friends TEXT,
-    ts TIMESTAMP,
+    friends LIST<TEXT>,
     PRIMARY KEY (userid)
 );
 
@@ -30,7 +29,7 @@ INSERT INTO chat(chat_id, message) values (1,'{msg:\"hello world\",readstatus:0,
 INSERT INTO chat(chat_id, message) values (2,'{msg:\"hey\",readstatus:0,to:2,from:1,ts:9:30}');
 INSERT INTO chat(chat_id, message) values (3,'{msg:\"world\",readstatus:0,to:2,from:3,ts:9:30}');
 
-INSERT INTO friends(userid, friends, ts) values(1,'{0:[2,"sahil jakhmola"],1:{3,"rishabh dhoundiyal}}',toTimestamp(now()));
+INSERT INTO friends(userid, friends) values(1,'{0:[2,"sahil jakhmola","adsdf21"],1:[3,"rishabh dhoundiyal","asdfasd"]}');
 -- message: {
 --     msg:"message",
 --     readstatus:0,
