@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Private Chat Room</title>
+</head>
+<body>
+    <h2>Chat Room</h2>
+    <input type="text" id="nameinput" placeholder="Enter your name" />
+    <button onclick="setName()">Set Name</button>
+    <br><br>
+    <input type="text" id="roomId" placeholder="Enter Room ID" />
+    <button onclick="joinRoom()">Join Room</button>
+    <br><br>
+    <div id="messages"></div>
+    <input type="text" id="messageInput" placeholder="Enter message" />
+    <button onclick="sendMessage()">Send Message</button>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        
+        // Set the user name
+        function setName() {
+            const name = document.getElementById('nameinput').value;
+            if (name) {
+                socket.emit('setName', name);
+            } else {
+                alert('Please enter a name!');
+            }
+        }
+
+        // Join a room
+        function joinRoom() {
+            const roomId = document.getElementById('roomId').value;
+            socket.emit('joinRoom', roomId);
+        }
+
+        // Send a message to the room
+        function sendMessage() {
+            const message = document.getElementById('messageInput').value;
+            const roomId = document.getElementById('roomId').value;
+            socket.emit('sendMessage', message );
+            document.getElementById('messageInput').value = ''; // Clear the input after sending
+        }
+
+        // Display incoming messages
+        socket.on('message', (msg) => {
+            console.log(msg);
+            const messageDiv = document.createElement('div');
+            messageDiv.textContent = `${msg.sender}: ${msg.text}`;
+            document.getElementById('messages').appendChild(messageDiv);
+        });
+    </script>
+</body>
+</html>
