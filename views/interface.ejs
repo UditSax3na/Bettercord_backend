@@ -10,7 +10,7 @@
     <input type="text" id="nameinput" placeholder="Enter your name" />
     <button onclick="setName()">Set Name</button>
     <br><br>
-    <input type="text" id="roomId" placeholder="Enter Room ID" />
+    <input type="text" id="toid" placeholder="Enter to ID" />
     <button onclick="joinRoom()">Join Room</button>
     <br><br>
     <div id="messages"></div>
@@ -20,7 +20,11 @@
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
-        
+        document.getElementById("nameinput").value ='ded0b277-2cf3-45ba-8782-71a284c23158';
+        document.getElementById("toid").value = '83d930a7-490c-4a12-b083-94e0eb5639f8';
+        setName();
+        joinRoom();
+        updateMsg();
         // Set the user name
         function setName() {
             const name = document.getElementById('nameinput').value;
@@ -33,14 +37,13 @@
 
         // Join a room
         function joinRoom() {
-            const roomId = document.getElementById('roomId').value;
-            socket.emit('joinRoom', roomId);
+            const toid = document.getElementById('toid').value;
+            socket.emit('joinRoom', toid);
         }
 
         // Send a message to the room
         function sendMessage() {
             const message = document.getElementById('messageInput').value;
-            const roomId = document.getElementById('roomId').value;
             socket.emit('sendMessage', message );
             document.getElementById('messageInput').value = ''; // Clear the input after sending
         }
@@ -49,9 +52,31 @@
         socket.on('message', (msg) => {
             console.log(msg);
             const messageDiv = document.createElement('div');
-            messageDiv.textContent = `${msg.sender}: ${msg.text}`;
+            messageDiv.textContent = `${msg.from}: ${msg.text}`;
             document.getElementById('messages').appendChild(messageDiv);
         });
+        const updateUI=(msg)=>{
+            const messageDiv = document.createElement('div');
+            messageDiv.textContent = `${msg.from}: ${msg.text}`;
+            document.getElementById('messages').appendChild(messageDiv);
+        }
+        async function updateMsg(){
+            try {
+                // Call the API
+                const response = await fetch('/api/chat/rec'); // Replace with your API URL
+                if (!response.ok) throw new Error('Network response was not ok');
+
+                // Parse the JSON from the response
+                const data = await response.json();
+                console.log(data);
+            } catch (error) {
+                console.error('There was an error fetching the data:', error);
+            }
+        }
     </script>
 </body>
 </html>
+
+<!-- ded0b277-2cf3-45ba-8782-71a284c23158 -->
+<!-- b252f1be-6ef2-4b67-9d69-b8ec1a97ee50 -->
+<!-- 83d930a7-490c-4a12-b083-94e0eb5639f8 -->
