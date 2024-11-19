@@ -16,15 +16,16 @@
     <div id="messages"></div>
     <input type="text" id="messageInput" placeholder="Enter message" />
     <button onclick="sendMessage()">Send Message</button>
+    <button onclick="disConnnect()">Disconnect</button>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
         document.getElementById("nameinput").value ='ded0b277-2cf3-45ba-8782-71a284c23158';
         document.getElementById("toid").value = '83d930a7-490c-4a12-b083-94e0eb5639f8';
-        setName();
-        joinRoom();
-        updateMsg();
+        // setName();
+        // joinRoom();
+        // updateMsg();
         // Set the user name
         function setName() {
             const name = document.getElementById('nameinput').value;
@@ -46,6 +47,9 @@
             const message = document.getElementById('messageInput').value;
             socket.emit('sendMessage', message );
             document.getElementById('messageInput').value = ''; // Clear the input after sending
+        }
+        function disConnnect(){
+            socket.close();
         }
 
         // Display incoming messages

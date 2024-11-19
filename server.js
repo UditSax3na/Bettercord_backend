@@ -2,26 +2,20 @@ const express = require('express');
 const cassandra = require('cassandra-driver');
 const socketIO = require('socket.io');
 const http = require('http');
-const { BUNDLE_PATH, TOKEN, KEYSPACE, TABLEUSER, TABLECHAT, 
+const { BUNDLE_PATH, KEYSPACE, TABLEUSER, TABLECHAT, 
 TABLEFRIENDS, TABLECHATID} = require('./constants/Credentials');
 const { isEmail, isUsername } = require('./lib/validation');
 require('dotenv').config();
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // Setup HTTP server and Socket.IO
 const server = http.createServer(app);
 const io = socketIO(server);
 
 // In-memory storage for messages per room
-// rooms = {
-//   // '21':{
-//   active:[],
-//   allowed:[],
-//   message:[]
-//  }
-// }
+
 let rooms = [];
 
 // Configure Express
@@ -32,7 +26,7 @@ app.use(express.json());
 // Initialize Cassandra client
 const client = new cassandra.Client({
   cloud: { secureConnectBundle: BUNDLE_PATH },
-  credentials: { username: 'token', password: TOKEN },
+  credentials: { username: 'token', password: processTOKEN },
   keyspace: KEYSPACE,
 });
 
@@ -122,7 +116,9 @@ app.post('/api/chat/rec',async (req, res)=>{
     query=`SELECT message FROM ${TABLECHAT} WHERE chat_id=${chatid}`;
     result = await client.execute(query);
     if(result.rows && result.rowLength!==0){
-      return res.status(200).json({data:result.rows});
+      let data = [];
+      let arr = result.rows[0]['message'].filter(msg=>msg).map(msg=>data.push(JSON.parse(msg)));
+      return res.status(200).json({data:data});
     }else{
       return res.status(200).json({data:null});
     }
@@ -190,8 +186,8 @@ app.get('/interface', (req, res) => {
 
 // Listen for new socket connections
 io.on('connection', (socket) => {
-    console.log('New user connected:', socket.id);
-    console.log('rooms : ',rooms);
+    const totalConnectedUsers = io.sockets.sockets.size;
+    console.log(`Total connected users: ${totalConnectedUsers}`);
 
     socket.data.roomId = null;
 
@@ -210,7 +206,6 @@ io.on('connection', (socket) => {
     // Join a room
     socket.on('joinRoom', async (toid) => {
       let query1 = `SELECT chat_id FROM ${TABLECHATID} WHERE fromid=${socket.data.id} and toid=${toid} ALLOW FILTERING`;
-      console.log(query1);
       let result = await client.execute(query1);
       if (!result.rows[0]){
         query1 = `SELECT chat_id FROM ${TABLECHATID} WHERE fromid=${toid} and toid=${socket.data.id} ALLOW FILTERING`
@@ -218,29 +213,46 @@ io.on('connection', (socket) => {
         socket.data.roomId = `${result.rows[0]['chat_id'].toString()}`
       }
       socket.data.roomId = `${result.rows[0]['chat_id'].toString()}`;
-      console.log(socket.data.roomId);
+      socket.data.toid = toid;
       try{
         if (!socket.data.id) {
-          socket.emit('message', { from: 'Server', text: 'Please set your alias before joining the room.' });
           return;
         }
  
         const room = io.sockets.adapter.rooms.get(socket.data.roomId);
         
         if (room && room.size === 2) {
-          socket.emit('message', { from: 'Server', text: 'Room is full.' });
           return;
+        }
+        let basicobj = {
+          roomdetails:{
+            allowed:[],
+            active:[],
+            message:[]
+          }
+        }
+        let roomfound = 0;  
+        rooms.map(o=>{
+          if(o.roomId==socket.data.roomId){
+            if(o.roomdetails.allowed.indexOf(socket.data.roomId)){
+              o.roomdetails.active=[...o.roomdetails.active,socket.data.id];
+            }
+          }
+        })
+        if (roomfound===0){
+          basicobj.roomdetails.allowed.push(socket.data.id);
+          basicobj.roomdetails.allowed.push(toid);
+          basicobj.roomdetails.active.push(socket.data.id);
+          rooms[socket.data.roomId]=basicobj;
         }
 
         socket.join(socket.data.roomId);
         
         if (!rooms[socket.data.roomId]) rooms[socket.data.roomId] = [];
 
-        // Send previous messages to the new user
-        rooms[socket.data.roomId].forEach(msg => socket.emit('message', JSON.parse(msg)));
-        
-        socket.emit('message', { from: 'Server', text: `Joined room ${socket.data.roomId}` });
-        io.to(socket.data.roomId).emit('message', { from: 'Server', text: `${socket.data.id} has joined the room.` });
+        rooms[socket.data.roomId].roomdetails.message.forEach(msg => socket.emit('message', JSON.parse(msg)));
+
+        console.log(`${socket.data.id} has joined a conversation!`);
       } catch (e){
         console.log(e);
       }
@@ -248,56 +260,62 @@ io.on('connection', (socket) => {
 
     // Handle sending messages        
     socket.on('sendMessage', (message) => {
-      if (!socket.data.roomId) {
-          socket.emit('message', { from: 'Server', text: 'You need to join a room before sending messages.' });
+      try{
+
+        console.log(socket.data.roomId);
+        console.log(rooms[socket.data.roomId]);
+        if (!socket.data.roomId || !socket.data.id) {
           return;
+        }
+        console.log(rooms[socket.data.roomId].allowed);
+        let found = rooms[socket.data.roomId].allowed.filter(e=>e==socket.data.toid);
+        if (found.length!=0){
+          const now = new Date();
+          const formattedDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+          const msg = {
+            from: socket.data.id,
+            text: message,
+            ts:formattedDate,
+            readstatus:0,
+          };
+    
+          // Save the message in memory for the room
+          if (!rooms[socket.data.roomId]) {
+            rooms[socket.data.roomId] = [];
+          }
+          rooms[socket.data.roomId].roomdetails.message.push(JSON.stringify(msg));
+          // Broadcast the message to all users in the room
+          io.to(socket.data.roomId).emit('message', msg);
+        }
+      }catch(e){
+        console.log(e);
       }
-
-      if (!socket.data.id) {
-          socket.emit('message', { from: 'Server', text: 'Please set your alias before sending messages.' });
-          return;
-      }
-      const now = new Date();
-      const formattedDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-      const msg = {
-        from: socket.data.id,
-        text: message,
-        ts:formattedDate,
-        readstatus:0,
-      };
-
-      // Save the message in memory for the room
-      if (!rooms[socket.data.roomId]) {
-          rooms[socket.data.roomId] = [];
-      }
-      rooms[socket.data.roomId].push(JSON.stringify(msg));
-
-      // Broadcast the message to all users in the room
-      io.to(socket.data.roomId).emit('message', msg);
-      console.log(rooms);
     });
 
     // Handle user disconnection
     socket.on('disconnect', async () => {
-      const query1 = `SELECT message FROM chat WHERE chat_id=${socket.data.roomId} ALLOW FILTERING`;
-      const result = await client.execute(query1);
-      let str = "\'";
-      result.rows[0].message
-      .filter(msg => msg) // filter out empty strings
-      .map(msg => str+=msg+"\',\'");
-      rooms[socket.data.roomId].map(e=>str+=e+"\',\'");
-      str+="\'";
-      const query = `INSERT INTO ${TABLECHAT}(chat_id,message) VALUES(${socket.data.roomId}, [${str}]);` // used to save the message every time one user disconnect from room 
-      await client.execute(query);
-      delete rooms[socket.data.roomId];
-
-      // if (){}
-      console.log(`User ${socket.data.id || socket.id} disconnected`);
-      if (socket.data.roomId) {
-          io.to(socket.data.roomId).emit('message', { from: 'Server', text: `${socket.data.id || socket.id} has left the room.` });
+      try{
+        const totalConnectedUsers = io.sockets.sockets.size;
+        console.log(`Total connected users: ${totalConnectedUsers}`);
+        if (socket.data.roomId){
+          const query1 = `SELECT message FROM chat WHERE chat_id=${socket.data.roomId} ALLOW FILTERING`;
+          const result = await client.execute(query1);
+          let str = "\'";
+          result.rows[0].message
+          .filter(msg => msg) // filter out empty strings
+          .map(msg => str+=msg+"\',\'");
+          rooms[socket.data.roomId].roomdetails.message.map(e=>str+=e+"\',\'");
+          str+="\'";
+          const query = `INSERT INTO ${TABLECHAT}(chat_id,message) VALUES(${socket.data.roomId}, [${str}]);` // used to save the message every time one user disconnect from room 
+          await client.execute(query);
+        }
+  
+        console.log(`User ${socket.data.id || socket.id} disconnected`);
+        delete socket.data.id;
+        delete socket.data.roomId;
+      }catch(e){
+        console.log(e);
       }
-      delete socket.data.id;
-      delete socket.data.roomId;
     });
 });
 

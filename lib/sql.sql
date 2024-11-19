@@ -1,12 +1,11 @@
 CREATE TABLE IF NOT EXISTS user (
+    email TEXT PRIMARY KEY,
     user_id UUID,
     user_name TEXT,
     name TEXT,
     avatar TEXT,
-    email TEXT,
     password TEXT,
-    status TEXT,
-    PRIMARY KEY (user_id, user_name, email)
+    status TEXT
 );
 
 CREATE TABLE IF NOT EXISTS chat (
