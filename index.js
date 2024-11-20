@@ -325,3 +325,5 @@ io.on('connection', (socket) => {
 
 // Start the server
 server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+module.exports = server;
