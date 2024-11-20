@@ -9,6 +9,7 @@ require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const TOKEN = process.env.TOKEN;
 
 // Setup HTTP server and Socket.IO
 const server = http.createServer(app);
@@ -23,10 +24,14 @@ app.set('view engine', 'ejs');
 app.set('views', './views');
 app.use(express.json());
 
+if (!TOKEN || typeof TOKEN !== 'string') {
+  throw new Error('TOKEN environment variable is missing or invalid. Check your .env file.');
+}
+
 // Initialize Cassandra client
 const client = new cassandra.Client({
   cloud: { secureConnectBundle: BUNDLE_PATH },
-  credentials: { username: 'token', password: processTOKEN },
+  credentials: { username: 'token', password: TOKEN },
   keyspace: KEYSPACE,
 });
 
@@ -65,7 +70,7 @@ app.post('/api/login',async (req,res)=>{
     }
     let query = '';
     if (found===false){
-      query = `Select * from ${TABLEUSER} WHERE email='${user}' and password='${password}' ALLOW FILTERING`;
+      query = `Select * from ? WHERE email='${user}' and password='${password}' ALLOW FILTERING`;
     }else{
       query = `Select * from ${TABLEUSER} WHERE username='${user}' and password='${password}' ALLOW FILTERING`;
     }
