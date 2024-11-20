@@ -2,14 +2,13 @@ const express = require('express');
 const cassandra = require('cassandra-driver');
 const socketIO = require('socket.io');
 const http = require('http');
-const { BUNDLE_PATH, KEYSPACE, TABLEUSER, TABLECHAT, 
+const { BUNDLE_PATH, KEYSPACE, TABLEUSER, TABLECHAT, TOKEN ,
 TABLEFRIENDS, TABLECHATID} = require('./constants/Credentials');
 const { isEmail, isUsername } = require('./lib/validation');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const TOKEN = process.env.TOKEN;
 
 // Setup HTTP server and Socket.IO
 const server = http.createServer(app);

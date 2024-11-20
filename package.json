@@ -1,11 +1,12 @@
 {
   "name": "endpoinbetter",
   "version": "1.0.0",
-  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "nodemon"
-  },
+  "start": "node server.js",
+  "build": "tsc", 
+  "test": "jest"
+}
+,
   "author": "",
   "license": "ISC",
   "description": "",
