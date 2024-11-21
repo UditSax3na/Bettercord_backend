@@ -16,9 +16,12 @@ const io = socketIO(server);
 
 // In-memory storage for messages per room
 
-let rooms = [];
+let rooms = {};
+let messagestack = []
 
-// Configure Express
+app.use(express.static('public'));
+
+
 app.set('view engine', 'ejs');
 app.set('views', './views');
 app.use(express.json());
@@ -69,7 +72,7 @@ app.post('/api/login',async (req,res)=>{
     }
     let query = '';
     if (found===false){
-      query = `Select * from ? WHERE email='${user}' and password='${password}' ALLOW FILTERING`;
+      query = `Select * from ${TABLEUSER} WHERE email='${user}' and password='${password}' ALLOW FILTERING`;
     }else{
       query = `Select * from ${TABLEUSER} WHERE username='${user}' and password='${password}' ALLOW FILTERING`;
     }
@@ -98,11 +101,7 @@ app.post('/api/login',async (req,res)=>{
 app.post('/api/reg',async (req,res)=>{
     try{
       const { name, username, email, password } = await req.body;
-      let query = `select COUNT(user_id) from ${TABLEUSER}`;
-      let result = await client.execute(query);
-      let count = result.rows[0]['system.count(user_id)'].toNumber();
-      count+=1;
-      query = `INSERT INTO ${TABLEUSER}(user_id, name, user_name, email, password) values(${count},'${name}','${username}','${email}','${password}')`;
+      query = `INSERT INTO ${TABLEUSER}(user_id, name, user_name, email, password) values(uuid(),'${name}','${username}','${email}','${password}')`;
       await client.execute(query);
       res.status(201).json({ message: "Record added successfully"});
     }catch(e){
@@ -169,24 +168,37 @@ app.post('/api/friends/getall',async (req,res)=>{
 app.post('/api/friends/save',async (req, res)=>{
   try {
     const { fromid, toid, username, user_name } = await req.body;
-    let query2 = `INSERT INTO ${TABLEFRIENDS}(defid, userid, friendid, user_name) VALUES (UUID(), ${fromid}, ${toid}, '${user_name}')`;
+    let query2 = `INSERT INTO ${TABLEFRIENDS}(userid, friendid, user_name) VALUES (${fromid}, ${toid}, '${user_name}') IF NOT EXISTS`;
     console.log(query2)
-    await client.execute(query2);
-    let query1 = `INSERT INTO ${TABLEFRIENDS}(defid, userid, friendid, user_name) VALUES (UUID(), ${toid}, ${fromid}, '${username}')`;
-    console.log(query1)
-    await client.execute(query1);
-    let query3 = `INSERT INTO ${TABLECHATID}(chat_id, fromid, toid) VALUES(uuid(),${fromid},${toid})`;
-    await client.execute(query3);
-    return res.status(200).json({success:1});
+    let result = await client.execute(query2);
+    console.log(typeof(result.rows[0]['[applied]']), result.rows[0]['[applied]']);
+    if (result.rows[0]['[applied]'] === true){
+      let query1 = `INSERT INTO ${TABLEFRIENDS}(userid, friendid, user_name) VALUES (${toid}, ${fromid}, '${username}')`;
+      console.log(query1)
+      await client.execute(query1);
+      let query3 = `INSERT INTO ${TABLECHATID}(chat_id, fromid, toid) VALUES(uuid(),${fromid},${toid})`;
+      await client.execute(query3);
+      return res.status(200).json({success:1});
+    }else{
+      return res.status(500).json({message:"friends already exists!"});
+    }
   } catch (e) {
     return res.status(500).json({message:"Internal error!",error:e});
   }
 });
 
 // Route for rendering a simple interface
-app.get('/interface', (req, res) => {
-  res.render('interface', { title: 'Chat Interface' });
+app.get('/', (req, res) => {
+  res.render('login', { title: 'Login' });
 });
+app.get('/registration', (req, res) => {
+  res.render('registration', { title: 'Registration' });
+});
+app.get('/chat', (req, res) => {
+  res.render('chat', { title: 'Chat' });
+});
+
+// ---- SOCKET ----
 
 // Listen for new socket connections
 io.on('connection', (socket) => {
@@ -200,10 +212,8 @@ io.on('connection', (socket) => {
       if (id) {
         socket.data.id = id;
         console.log(`Alias for ${socket.id} set to ${socket.data.id}`);
-        socket.emit('message', { from: 'Server', text: `Your name has been set to ${socket.data.id}` });
       } else {
         console.log('Name was not provided or was empty');
-        socket.emit('message', { from: 'Server', text: 'Name is required to proceed' });
       }
     });
 
@@ -228,35 +238,36 @@ io.on('connection', (socket) => {
         if (room && room.size === 2) {
           return;
         }
-        let basicobj = {
-          roomdetails:{
-            allowed:[],
-            active:[],
-            message:[]
-          }
-        }
-        let roomfound = 0;  
-        rooms.map(o=>{
-          if(o.roomId==socket.data.roomId){
-            if(o.roomdetails.allowed.indexOf(socket.data.roomId)){
-              o.roomdetails.active=[...o.roomdetails.active,socket.data.id];
+        console.log("we are in the websocket code for joinRoom");
+
+        if (!rooms[socket.data.roomId]){
+          let obj = {
+            roomdetails:{
+              active:[],
+              message:[]
             }
           }
-        })
-        if (roomfound===0){
-          basicobj.roomdetails.allowed.push(socket.data.id);
-          basicobj.roomdetails.allowed.push(toid);
-          basicobj.roomdetails.active.push(socket.data.id);
-          rooms[socket.data.roomId]=basicobj;
+          rooms[socket.data.roomId]=obj;
         }
-
-        socket.join(socket.data.roomId);
         
-        if (!rooms[socket.data.roomId]) rooms[socket.data.roomId] = [];
+        socket.join(socket.data.roomId);
+        rooms[socket.data.roomId]['roomdetails']['active'].push(socket.data.id);
+        
+        if (!rooms[socket.data.roomId]) rooms[socket.data.roomId] = {};
 
-        rooms[socket.data.roomId].roomdetails.message.forEach(msg => socket.emit('message', JSON.parse(msg)));
+        rooms[socket.data.roomId]['roomdetails']['message'].forEach(msg =>{
+          let newmsg = JSON.parse(msg);
+          if (newmsg.readstatus===0){
+            newmsg.readstatus=1;
+            let index = rooms[socket.data.roomId]['roomdetails']['message'].indexOf(msg);
+            rooms[socket.data.roomId]['roomdetails']['message'].splice(index, 1, JSON.stringify(newmsg));
+          }
+          socket.emit('message', newmsg);
+        });
 
         console.log(`${socket.data.id} has joined a conversation!`);
+        // console.log(rooms.);
+        Array(rooms).forEach(e=>{console.log(`${JSON.stringify(e)}`)})
       } catch (e){
         console.log(e);
       }
@@ -265,35 +276,62 @@ io.on('connection', (socket) => {
     // Handle sending messages        
     socket.on('sendMessage', (message) => {
       try{
-
-        console.log(socket.data.roomId);
-        console.log(rooms[socket.data.roomId]);
         if (!socket.data.roomId || !socket.data.id) {
           return;
         }
-        console.log(rooms[socket.data.roomId].allowed);
-        let found = rooms[socket.data.roomId].allowed.filter(e=>e==socket.data.toid);
-        if (found.length!=0){
-          const now = new Date();
-          const formattedDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-          const msg = {
-            from: socket.data.id,
-            text: message,
-            ts:formattedDate,
-            readstatus:0,
-          };
-    
-          // Save the message in memory for the room
-          if (!rooms[socket.data.roomId]) {
-            rooms[socket.data.roomId] = [];
-          }
-          rooms[socket.data.roomId].roomdetails.message.push(JSON.stringify(msg));
-          // Broadcast the message to all users in the room
-          io.to(socket.data.roomId).emit('message', msg);
+        const now = new Date();
+        const formattedDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+        let readstatus = 0;
+        if (rooms[socket.data.roomId]['roomdetails']['active'].indexOf(socket.data.toid) !== -1){
+          readstatus=1;
         }
+        const msg = {
+          from: socket.data.id,
+          text: message,
+          ts:formattedDate,
+          readstatus:readstatus,
+        };
+  
+        // Save the message in memory for the room
+        if (!rooms[socket.data.roomId]) {
+          rooms[socket.data.roomId] = [];
+        }
+        rooms[socket.data.roomId].roomdetails.message.push(JSON.stringify(msg));
+        // Broadcast the message to all users in the room
+        io.to(socket.data.roomId).emit('message', msg);
+        Array(rooms).forEach(e=>{console.log(`${JSON.stringify(e)}`)})
       }catch(e){
         console.log(e);
       }
+    });
+
+    // handle when user leave a room
+    socket.on('leaveRoom',async ()=>{
+      Array(rooms).forEach(e=>{console.log(`${JSON.stringify(e)}`)})
+      const room = io.sockets.adapter.rooms.get(socket.data.roomId);
+      if (socket.data.roomId){
+        const query1 = `SELECT message FROM chat WHERE chat_id=${socket.data.roomId} ALLOW FILTERING`;
+        const result = await client.execute(query1);
+        let str = "\'";
+        result.rows[0].message
+        .filter(msg => msg) // filter out empty strings
+        .map(msg => str+=msg+"\',\'");
+        rooms[socket.data.roomId].roomdetails.message.map(e=>str+=e+"\',\'");
+        str+="\'";
+        const query = `INSERT INTO ${TABLECHAT}(chat_id,message) VALUES(${socket.data.roomId}, [${str}]);` // used to save the message every time one user disconnect from room 
+        await client.execute(query);
+        
+        console.log(`User ${socket.data.id || socket.id} disconnected`);
+      }
+      if (room && room.has(socket.id)) {
+        let a = rooms[socket.data.roomId]['roomdetails']['active'].filter(e=>e!=socket.data.id);
+        rooms[socket.data.roomId]['roomdetails']['active'] = a;
+        console.log(`${socket.data.id} has left the room!`);
+        if (rooms[socket.data.roomId]['roomdetails']['active'].length<2 && rooms[socket.data.roomId]['roomdetails']['active'].length>0){
+          delete rooms[socket.data.roomId];
+        }
+        socket.leave(socket.data.roomId);
+      } 
     });
 
     // Handle user disconnection
@@ -312,9 +350,10 @@ io.on('connection', (socket) => {
           str+="\'";
           const query = `INSERT INTO ${TABLECHAT}(chat_id,message) VALUES(${socket.data.roomId}, [${str}]);` // used to save the message every time one user disconnect from room 
           await client.execute(query);
+          
+          console.log(`User ${socket.data.id || socket.id} disconnected`);
         }
-  
-        console.log(`User ${socket.data.id || socket.id} disconnected`);
+
         delete socket.data.id;
         delete socket.data.roomId;
       }catch(e){
