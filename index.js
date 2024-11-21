@@ -330,8 +330,9 @@ io.on('connection', (socket) => {
         if (rooms[socket.data.roomId]['roomdetails']['active'].length<2 && rooms[socket.data.roomId]['roomdetails']['active'].length>0){
           delete rooms[socket.data.roomId];
         }
-        socket.leave(socket.data.roomId);
       } 
+      socket.leave(socket.data.roomId);
+      delete socket.data.roomId;
     });
 
     // Handle user disconnection
@@ -339,23 +340,8 @@ io.on('connection', (socket) => {
       try{
         const totalConnectedUsers = io.sockets.sockets.size;
         console.log(`Total connected users: ${totalConnectedUsers}`);
-        if (socket.data.roomId){
-          const query1 = `SELECT message FROM chat WHERE chat_id=${socket.data.roomId} ALLOW FILTERING`;
-          const result = await client.execute(query1);
-          let str = "\'";
-          result.rows[0].message
-          .filter(msg => msg) // filter out empty strings
-          .map(msg => str+=msg+"\',\'");
-          rooms[socket.data.roomId].roomdetails.message.map(e=>str+=e+"\',\'");
-          str+="\'";
-          const query = `INSERT INTO ${TABLECHAT}(chat_id,message) VALUES(${socket.data.roomId}, [${str}]);` // used to save the message every time one user disconnect from room 
-          await client.execute(query);
-          
-          console.log(`User ${socket.data.id || socket.id} disconnected`);
-        }
-
+        console.log(`User ${socket.data.id || socket.id} disconnected`);
         delete socket.data.id;
-        delete socket.data.roomId;
       }catch(e){
         console.log(e);
       }
