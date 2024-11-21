@@ -1,83 +1,134 @@
-<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><%= title %></title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+    <link rel="stylesheet" href="/css/chat.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
 </head>
 <body>
-    <h2>Chat Room</h2>
-    <input type="text" id="nameinput" placeholder="Enter your name" />
-    <button onclick="setName()">Set Name</button>
-    <br><br>
-    <input type="text" id="toid" placeholder="Enter to ID" />
-    <button onclick="joinRoom()">Join Room</button>
-    <br><br>
-    <div id="messages"></div>
-    <input type="text" id="messageInput" placeholder="Enter message" />
-    <button onclick="sendMessage()">Send Message</button>
-    <button onclick="disConnnect()">Disconnect</button>
-
+    <div class="header">
+        <div class="icon"></div>
+        <div class="heading">
+            <div class="iconpf"></div>
+            <div class="titlename" id="titlename">
+                titlename
+            </div>
+        </div>
+    </div>
+    <!-- <div class="leftpanel" id="notification"></div> -->
+    <div class="main">
+        <div class="menu" id="menu"></div>
+        <div class="chatarea" id="chatarea"></div>
+    </div>
     <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
     <script>
+        const username = <%- JSON.stringify(data.user_name)%>;
+        const userid = <%- JSON.stringify(data.user_id) %>;
+        const sendMsg=()=>{
+            let a=$('#messagebox').val();
+            $('#messagebox').val('');
+            socket.emit('sendMessage',a);
+            addMsg({text:a},'you',1);
+        }
+        const addMsg = (msg,un, mode)=>{
+            if (mode===1){
+                let memsg = `
+                    <div class="memsgcolumn">
+                        <div class="memsg">
+                            <div class="name">${un}</div>
+                            <div class="msg">${msg.text}</div>
+                        </div>
+                    </div>
+                `;
+                $('#messages').append(memsg);
+            }else{
+                let othermsg = `
+                <div class="othercolumn">
+                    <div class="other">
+                        <div class="name">${un}</div>
+                        <div class="msg">${msg.text}</div>
+                    </div>
+                </div>`; 
+                $('#messages').append(othermsg);
+            }
+        }
+        const loadChat = (fromid, username, toid)=>{
+            if (FOUND===true){
+                socket.emit('leaveRoom');
+                FOUND = false;
+            }
+            socket.emit('setName',`${userid}`);
+            FOUND=true;
+            $('#titlename').text(username);
+            console.log('These are thing : ',fromid, username, toid);
+            socket.emit('joinRoom',`${toid}`);
+            let boxes = `
+            <div class="messages" id="messages">
+            </div>
+            <div class="boxes">
+                <input type="text" class="messagebox" id="messagebox" placeholder="Type messsages">   
+                <button class="send" id='sendbtn'>send</button>
+            </div>
+            `;
+            $('#chatarea').html(boxes);
+            $.post('/api/chat/rec',{fromid,toid},function(response){
+              if (response.data!==null){
+                response.data.forEach(msg=>{
+                    if (msg.from===fromid){
+                        addMsg(msg,'you',1);
+                    }else{
+                        addMsg(msg,username,0);
+                    }
+                });
+              }
+            })
+            document.querySelector('#sendbtn').addEventListener('click',sendMsg);
+        }
         const socket = io();
-        document.getElementById("nameinput").value ='ded0b277-2cf3-45ba-8782-71a284c23158';
-        document.getElementById("toid").value = '83d930a7-490c-4a12-b083-94e0eb5639f8';
-        // setName();
-        // joinRoom();
-        // updateMsg();
-        // Set the user name
-        function setName() {
-            const name = document.getElementById('nameinput').value;
-            if (name) {
-                socket.emit('setName', name);
-            } else {
-                alert('Please enter a name!');
-            }
-        }
-
-        // Join a room
-        function joinRoom() {
-            const toid = document.getElementById('toid').value;
-            socket.emit('joinRoom', toid);
-            document.getElementById('messages').innerHTML='';
-        }
-
-        // Send a message to the room
-        function sendMessage() {
-            const message = document.getElementById('messageInput').value;
-            socket.emit('sendMessage', message );
-            document.getElementById('messageInput').value = ''; // Clear the input after sending
-        }
-        function disConnnect(){
+        let FOUND = false;
+        socket.on('message',function(message){
+            if (message.from!==userid)addMsg(message,0);
+        })
+        socket.on('disconnect',function(){
             socket.emit('leaveRoom');
-        }
-
-        // Display incoming messages
-        socket.on('message', (msg) => {
-            console.log(msg);
-            const messageDiv = document.createElement('div');
-            messageDiv.textContent = `${msg.from}: ${msg.text}`;
-            document.getElementById('messages').appendChild(messageDiv);
+            console.log("socket disconnected");
+            socket.close();
+        })
+        window.addEventListener('beforeunload', function() {
+            socket.emit('leaveRoom');
         });
-        const updateUI=(msg)=>{
-            const messageDiv = document.createElement('div');
-            messageDiv.textContent = `${msg.from}: ${msg.text}`;
-            document.getElementById('messages').appendChild(messageDiv);
-        }
-        async function updateMsg(){
-            try {
-                // Call the API
-                const response = await fetch('/api/chat/rec'); // Replace with your API URL
-                if (!response.ok) throw new Error('Network response was not ok');
+        $.post(`/api/friends/getall`,{userid:userid}, function(response) {
+            if (response.data === null){
+                let messageHTML = `
+                    <div class="item">
+                        <div class="chattitle">Add Friends</div>
+                    </div>
+                    `;
+                $('#menu').append(messageHTML);
 
-                // Parse the JSON from the response
-                const data = await response.json();
-                console.log(data);
-            } catch (error) {
-                console.error('There was an error fetching the data:', error);
+            }else{
+                response.data.forEach(msg => {
+                    let messageHTML = `
+                    <div class="item">
+                        <div class="iconppf"></div>
+                        <div class="chattitle" onclick='loadChat' data-username='${msg.user_name}' data-friendid='${msg.friendid}'>${msg.user_name}</div>
+                    </div>
+                    `;
+                    $('#menu').append(messageHTML);
+                });
+                document.querySelectorAll('.chattitle').forEach(div => {
+                    div.addEventListener('click', function () {
+                        // Access the data-* attributes
+                        const username = this.dataset.username; // Get data-username
+                        const friendid = this.dataset.friendid; // Get data-friendid
+                        loadChat(userid, username, friendid);
+                    });
+                });
             }
-        }
+        });
     </script>
 </body>
 </html>

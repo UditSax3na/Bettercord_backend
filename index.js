@@ -2,6 +2,7 @@ const express = require('express');
 const cassandra = require('cassandra-driver');
 const socketIO = require('socket.io');
 const http = require('http');
+const session = require('express-session');
 const { BUNDLE_PATH, KEYSPACE, TABLEUSER, TABLECHAT, TOKEN ,
 TABLEFRIENDS, TABLECHATID} = require('./constants/Credentials');
 const { isEmail, isUsername } = require('./lib/validation');
@@ -17,14 +18,22 @@ const io = socketIO(server);
 // In-memory storage for messages per room
 
 let rooms = {};
-let messagestack = []
 
 app.use(express.static('public'));
 
 
 app.set('view engine', 'ejs');
 app.set('views', './views');
+
+app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+
+app.use(session({
+  secret: 'stuffUditsaxena',  // A simple secret key for development
+  resave: false,
+  saveUninitialized: true,
+  cookie: { secure: false }
+}));
 
 if (!TOKEN || typeof TOKEN !== 'string') {
   throw new Error('TOKEN environment variable is missing or invalid. Check your .env file.');
@@ -89,6 +98,7 @@ app.post('/api/login',async (req,res)=>{
         password: result.rows[0]['password'],
         status: result.rows[0]['status']
       }
+      req.session.user = a;
       res.json({data:a, foundStatus:1})
       res.status(200);
     }
@@ -115,6 +125,10 @@ app.post('/api/chat/rec',async (req, res)=>{
     const { fromid, toid } = await req.body;
     let query = `SELECT chat_id FROM ${TABLECHATID} WHERE fromid=${fromid} and toid=${toid} ALLOW FILTERING`;
     let result = await client.execute(query);
+    if(!result.rows[0]){
+      query=`SELECT chat_id FROM ${TABLECHATID} WHERE fromid=${toid} and toid=${fromid} ALLOW FILTERING`
+      result = await client.execute(query);
+    }
     let chatid = result.rows[0]['chat_id'].toString();
     query=`SELECT message FROM ${TABLECHAT} WHERE chat_id=${chatid}`;
     result = await client.execute(query);
@@ -194,9 +208,10 @@ app.get('/', (req, res) => {
 app.get('/registration', (req, res) => {
   res.render('registration', { title: 'Registration' });
 });
-app.get('/chat', (req, res) => {
-  res.render('chat', { title: 'Chat' });
-});
+app.get('/chat',async (req,res)=>{
+  const data = req.session.user;
+  res.render('chat', { title: `Chat | ${data.user_name}`,data:data });
+})
 
 // ---- SOCKET ----
 
@@ -324,15 +339,16 @@ io.on('connection', (socket) => {
         console.log(`User ${socket.data.id || socket.id} disconnected`);
       }
       if (room && room.has(socket.id)) {
+        console.log('room data has been deleted');
         let a = rooms[socket.data.roomId]['roomdetails']['active'].filter(e=>e!=socket.data.id);
         rooms[socket.data.roomId]['roomdetails']['active'] = a;
         console.log(`${socket.data.id} has left the room!`);
         if (rooms[socket.data.roomId]['roomdetails']['active'].length<2 && rooms[socket.data.roomId]['roomdetails']['active'].length>0){
           delete rooms[socket.data.roomId];
         }
+        socket.leave(socket.data.roomId);
+        delete socket.data.roomId;
       } 
-      socket.leave(socket.data.roomId);
-      delete socket.data.roomId;
     });
 
     // Handle user disconnection
