@@ -1,5 +1,5 @@
 ### server
-
+This application uses `astra db` database 
 
 ### steps to run 
 ###### step 1:
