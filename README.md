@@ -16,3 +16,4 @@ Configure Credentials: Fill in the necessary database credentials in the constan
 
 Start the Server: Execute npm run dev to launch the server in development mode.
 
+[WPF application repo](https://github.com/star2306u/project)
